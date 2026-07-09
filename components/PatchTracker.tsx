@@ -59,6 +59,24 @@ function formatTime(iso: string) {
   });
 }
 
+function formatSessionRange(session: OptuneSessionRecord, showFullDates = false) {
+  const start = new Date(session.start);
+  const startLabel = `${formatShortDate(start)}, ${formatTime(session.start)}`;
+
+  if (!session.end) {
+    return `${startLabel} - now`;
+  }
+
+  const end = new Date(session.end);
+  const endLabel = `${formatShortDate(end)}, ${formatTime(session.end)}`;
+
+  if (!showFullDates && dateKey(start) === dateKey(end)) {
+    return `${formatTime(session.start)} - ${formatTime(session.end)}`;
+  }
+
+  return `${startLabel} - ${endLabel}`;
+}
+
 function formatShortDate(date: Date) {
   return date.toLocaleDateString([], {
     month: "short",
@@ -105,7 +123,7 @@ function getOpenSession(records: Records) {
   for (const [key, record] of Object.entries(records)) {
     const index = record.sessions.findIndex((session) => !session.end);
     if (index >= 0) {
-      return { key, index };
+      return { key, index, session: record.sessions[index] };
     }
   }
 
@@ -139,15 +157,22 @@ function toggleOptuneRecord(records: Records, now: Date): Records {
   const nowIso = now.toISOString();
 
   if (active) {
-    const record = records[active.key] ?? emptyRecord();
+    const activeId = active.session?.id;
     return {
       ...records,
-      [active.key]: {
-        ...record,
-        sessions: record.sessions.map((session, index) =>
-          index === active.index ? { ...session, end: nowIso } : session
-        )
-      }
+      ...Object.fromEntries(
+        Object.entries(records).map(([key, record]) => [
+          key,
+          {
+            ...record,
+            sessions: record.sessions.map((session, index) =>
+              session.id === activeId || (key === active.key && index === active.index)
+                ? { ...session, end: nowIso }
+                : session
+            )
+          }
+        ])
+      )
     };
   }
 
@@ -158,7 +183,7 @@ function toggleOptuneRecord(records: Records, now: Date): Records {
     ...records,
     [key]: {
       ...record,
-      sessions: [...record.sessions, { start: nowIso }]
+      sessions: [...record.sessions, { id: `optimistic-${nowIso}`, start: nowIso }]
     }
   };
 }
@@ -189,6 +214,7 @@ function summarize(records: Records, date: Date, scope: Scope) {
   let wearMs = 0;
   let patchDays = 0;
   let sessionCount = 0;
+  const countedSessions = new Set<string>();
 
   Object.entries(records).forEach(([key, record]) => {
     const recordDate = keyToDate(key);
@@ -197,8 +223,13 @@ function summarize(records: Records, date: Date, scope: Scope) {
     }
 
     record.sessions.forEach((session) => {
+      if (countedSessions.has(session.id)) {
+        return;
+      }
+
       const overlap = getOverlapMs(session, start, end);
       if (overlap > 0) {
+        countedSessions.add(session.id);
         wearMs += overlap;
         sessionCount += 1;
       }
@@ -216,6 +247,27 @@ function summarize(records: Records, date: Date, scope: Scope) {
     start,
     end
   };
+}
+
+function getPeriodSessions(records: Records, date: Date, scope: Scope) {
+  const { start, end } = getPeriod(date, scope);
+  const sessions = new Map<string, OptuneSessionRecord>();
+
+  Object.values(records).forEach((record) => {
+    record.sessions.forEach((session) => {
+      if (sessions.has(session.id)) {
+        return;
+      }
+
+      if (getOverlapMs(session, start, end) > 0) {
+        sessions.set(session.id, session);
+      }
+    });
+  });
+
+  return Array.from(sessions.values()).sort(
+    (left, right) => new Date(left.start).getTime() - new Date(right.start).getTime()
+  );
 }
 
 async function postRecords(url: string, body?: unknown) {
@@ -248,6 +300,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const weeks = useMemo(() => makeCalendarWeeks(viewDate), [viewDate]);
   const statsDate = scope === "month" || scope === "year" ? viewDate : selectedDate;
   const stats = summarize(records, statsDate, scope);
+  const activitySessions = scope === "day" || scope === "week" ? getPeriodSessions(records, statsDate, scope) : [];
 
   const scopeTitle =
     scope === "day"
@@ -427,20 +480,18 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
           </div>
         </div>
 
-        {scope === "day" ? (
+        {scope === "day" || scope === "week" ? (
           <div className="detailBlock">
             <h3>Optune activity</h3>
-            {selectedRecord.sessions.length ? (
-              selectedRecord.sessions.map((session, index) => (
-                <div className="sessionRow" key={`${session.start}-${index}`}>
+            {activitySessions.length ? (
+              activitySessions.map((session) => (
+                <div className="sessionRow" key={session.id}>
                   <span aria-hidden="true">◷</span>
-                  <span>
-                    {formatTime(session.start)} - {session.end ? formatTime(session.end) : "now"}
-                  </span>
+                  <span>{formatSessionRange(session, scope === "week")}</span>
                 </div>
               ))
             ) : (
-              <p className="emptyText">No Optune sessions recorded for this day.</p>
+              <p className="emptyText">No Optune sessions recorded for this {scope}.</p>
             )}
           </div>
         ) : null}

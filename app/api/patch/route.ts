@@ -23,28 +23,11 @@ export async function POST(request: Request) {
   });
 
   if (day.patchChanged) {
-    const sessionCount = await prisma.optuneSession.count({
+    await prisma.patchDay.delete({
       where: {
-        dayId: day.id
+        id: day.id
       }
     });
-
-    if (sessionCount > 0) {
-      await prisma.patchDay.update({
-        where: {
-          id: day.id
-        },
-        data: {
-          patchChanged: false
-        }
-      });
-    } else {
-      await prisma.patchDay.delete({
-        where: {
-          id: day.id
-        }
-      });
-    }
   } else {
     await prisma.patchDay.update({
       where: {

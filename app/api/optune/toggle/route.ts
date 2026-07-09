@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { dateKey } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { getRecords } from "@/lib/records";
 
@@ -25,19 +24,8 @@ export async function POST() {
       }
     });
   } else {
-    const day = await prisma.patchDay.upsert({
-      where: {
-        dateKey: dateKey(now)
-      },
-      create: {
-        dateKey: dateKey(now)
-      },
-      update: {}
-    });
-
     await prisma.optuneSession.create({
       data: {
-        dayId: day.id,
         startAt: now
       }
     });
