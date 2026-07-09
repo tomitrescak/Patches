@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PatchDay {
+  id           String          @id @default(cuid())
+  dateKey      String          @unique
+  patchChanged Boolean         @default(false)
+  sessions     OptuneSession[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model OptuneSession {
+  id        String    @id @default(cuid())
+  dayId     String
+  day       PatchDay  @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  startAt   DateTime
+  endAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([dayId])
+  @@index([endAt])
+}
