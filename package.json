@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "~19.1.17",
     "@types/react-dom": "~19.1.7",
+    "vitest": "^4.0.0",
     "typescript": "~5.9.3"
   }
 }

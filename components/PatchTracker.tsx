@@ -4,8 +4,8 @@ import { useMemo, useState } from "react";
 
 import { dateKey, keyToDate } from "@/lib/dates";
 import type { DayRecord, OptuneSessionRecord, Records } from "@/lib/records";
-
-type Scope = "day" | "week" | "month" | "year";
+import { getOverlapMs, getPeriod, summarize } from "@/lib/utility";
+import type { Scope } from "@/lib/utility";
 
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const monthLabels = [
@@ -82,37 +82,6 @@ function formatShortDate(date: Date) {
     month: "short",
     day: "numeric"
   });
-}
-
-function getPeriod(date: Date, scope: Scope) {
-  if (scope === "day") {
-    return { start: startOfDay(date), end: endOfDay(date) };
-  }
-
-  if (scope === "week") {
-    const start = startOfWeek(date);
-    return { start, end: addDays(start, 7) };
-  }
-
-  if (scope === "month") {
-    return {
-      start: new Date(date.getFullYear(), date.getMonth(), 1),
-      end: new Date(date.getFullYear(), date.getMonth() + 1, 1)
-    };
-  }
-
-  return {
-    start: new Date(date.getFullYear(), 0, 1),
-    end: new Date(date.getFullYear() + 1, 0, 1)
-  };
-}
-
-function getOverlapMs(session: OptuneSessionRecord, periodStart: Date, periodEnd: Date) {
-  const start = new Date(session.start).getTime();
-  const end = session.end ? new Date(session.end).getTime() : Date.now();
-  const overlapStart = Math.max(start, periodStart.getTime());
-  const overlapEnd = Math.min(end, periodEnd.getTime());
-  return Math.max(0, overlapEnd - overlapStart);
 }
 
 function emptyRecord(): DayRecord {
@@ -207,46 +176,6 @@ function makeCalendarWeeks(viewDate: Date) {
   }
 
   return weeks;
-}
-
-function summarize(records: Records, date: Date, scope: Scope) {
-  const { start, end } = getPeriod(date, scope);
-  let wearMs = 0;
-  let patchDays = 0;
-  let sessionCount = 0;
-  const countedSessions = new Set<string>();
-
-  Object.entries(records).forEach(([key, record]) => {
-    const recordDate = keyToDate(key);
-    if (record.patchChanged && recordDate >= start && recordDate < end) {
-      patchDays += 1;
-    }
-
-    record.sessions.forEach((session) => {
-      if (countedSessions.has(session.id)) {
-        return;
-      }
-
-      const overlap = getOverlapMs(session, start, end);
-      if (overlap > 0) {
-        countedSessions.add(session.id);
-        wearMs += overlap;
-        sessionCount += 1;
-      }
-    });
-  });
-
-  const periodMs = end.getTime() - start.getTime();
-  const percent = periodMs > 0 ? Math.min(100, (wearMs / periodMs) * 100) : 0;
-
-  return {
-    wearMs,
-    patchDays,
-    sessionCount,
-    percent,
-    start,
-    end
-  };
 }
 
 function getPeriodSessions(records: Records, date: Date, scope: Scope) {
