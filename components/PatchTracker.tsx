@@ -23,6 +23,13 @@ const monthLabels = [
   "December"
 ];
 
+type SessionDraft = {
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+};
+
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -82,6 +89,57 @@ function formatShortDate(date: Date) {
     month: "short",
     day: "numeric"
   });
+}
+
+function toDateInputValue(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function toTimeInputValue(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function makeSessionDraft(session: OptuneSessionRecord): SessionDraft {
+  const start = new Date(session.start);
+  const end = session.end ? new Date(session.end) : null;
+
+  return {
+    startDate: toDateInputValue(start),
+    startTime: toTimeInputValue(start),
+    endDate: end ? toDateInputValue(end) : "",
+    endTime: end ? toTimeInputValue(end) : ""
+  };
+}
+
+function draftToIso(draft: SessionDraft) {
+  if (!draft.startDate || !draft.startTime) {
+    throw new Error("Start date and time are required.");
+  }
+
+  const start = new Date(`${draft.startDate}T${draft.startTime}`);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error("Start date and time are invalid.");
+  }
+
+  const hasEnd = Boolean(draft.endDate || draft.endTime);
+  if (!hasEnd) {
+    return { start: start.toISOString(), end: null };
+  }
+
+  if (!draft.endDate || !draft.endTime) {
+    throw new Error("End date and time must both be set.");
+  }
+
+  const end = new Date(`${draft.endDate}T${draft.endTime}`);
+  if (Number.isNaN(end.getTime())) {
+    throw new Error("End date and time are invalid.");
+  }
+
+  if (end <= start) {
+    throw new Error("End time must be after start time.");
+  }
+
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 function emptyRecord(): DayRecord {
@@ -200,8 +258,12 @@ function getPeriodSessions(records: Records, date: Date, scope: Scope) {
 }
 
 async function postRecords(url: string, body?: unknown) {
+  return requestRecords(url, "POST", body);
+}
+
+async function requestRecords(url: string, method: string, body?: unknown) {
   const response = await fetch(url, {
-    method: "POST",
+    method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined
   });
@@ -221,6 +283,8 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const [scope, setScope] = useState<Scope>("day");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [editingSession, setEditingSession] = useState<OptuneSessionRecord | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<SessionDraft | null>(null);
   const openSession = getOpenSession(records);
 
   const selectedDate = keyToDate(selectedKey);
@@ -283,6 +347,56 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   function selectWeek(day: Date) {
     setSelectedKey(dateKey(day));
     setScope("week");
+  }
+
+  function editSession(session: OptuneSessionRecord) {
+    setError("");
+    setEditingSession(session);
+    setSessionDraft(makeSessionDraft(session));
+  }
+
+  function closeSessionEditor() {
+    setEditingSession(null);
+    setSessionDraft(null);
+  }
+
+  function updateSessionDraft(field: keyof SessionDraft, value: string) {
+    setSessionDraft((draft) => (draft ? { ...draft, [field]: value } : draft));
+  }
+
+  async function saveSession() {
+    if (!editingSession || !sessionDraft) {
+      return;
+    }
+
+    try {
+      setError("");
+      setIsSaving(true);
+      const { start, end } = draftToIso(sessionDraft);
+      setRecords(await requestRecords("/api/optune/session", "PATCH", { id: editingSession.id, start, end }));
+      closeSessionEditor();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Something went wrong.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteSession() {
+    if (!editingSession) {
+      return;
+    }
+
+    try {
+      setError("");
+      setIsSaving(true);
+      setRecords(await requestRecords("/api/optune/session", "DELETE", { id: editingSession.id }));
+      closeSessionEditor();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Something went wrong.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -414,10 +528,10 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             <h3>Optune activity</h3>
             {activitySessions.length ? (
               activitySessions.map((session) => (
-                <div className="sessionRow" key={session.id}>
+                <button className="sessionRow" key={session.id} onClick={() => editSession(session)}>
                   <span aria-hidden="true">◷</span>
                   <span>{formatSessionRange(session, scope === "week")}</span>
-                </div>
+                </button>
               ))
             ) : (
               <p className="emptyText">No Optune sessions recorded for this {scope}.</p>
@@ -425,6 +539,73 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
           </div>
         ) : null}
       </section>
+
+      {editingSession && sessionDraft ? (
+        <div className="modalOverlay" role="presentation">
+          <section className="sessionEditor" aria-label="Edit Optune activity" role="dialog" aria-modal="true">
+            <div className="sessionEditorHeader">
+              <div>
+                <p className="statsLabel">OPTUNE ACTIVITY</p>
+                <h2>Edit time</h2>
+              </div>
+              <button className="iconButton" aria-label="Close editor" disabled={isSaving} onClick={closeSessionEditor}>
+                ×
+              </button>
+            </div>
+
+            <div className="sessionFormGrid">
+              <label>
+                <span>Start date</span>
+                <input
+                  disabled={isSaving}
+                  type="date"
+                  value={sessionDraft.startDate}
+                  onChange={(event) => updateSessionDraft("startDate", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Start time</span>
+                <input
+                  disabled={isSaving}
+                  type="time"
+                  value={sessionDraft.startTime}
+                  onChange={(event) => updateSessionDraft("startTime", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>End date</span>
+                <input
+                  disabled={isSaving}
+                  type="date"
+                  value={sessionDraft.endDate}
+                  onChange={(event) => updateSessionDraft("endDate", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>End time</span>
+                <input
+                  disabled={isSaving}
+                  type="time"
+                  value={sessionDraft.endTime}
+                  onChange={(event) => updateSessionDraft("endTime", event.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="sessionEditorActions">
+              <button className="deleteButton" disabled={isSaving} onClick={deleteSession}>
+                Delete
+              </button>
+              <button className="secondaryButton" disabled={isSaving} onClick={closeSessionEditor}>
+                Cancel
+              </button>
+              <button className="saveButton" disabled={isSaving} onClick={saveSession}>
+                Save
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

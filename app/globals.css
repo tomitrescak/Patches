@@ -330,12 +330,24 @@ button {
 
 .sessionRow {
   align-items: center;
+  background: transparent;
+  border: 0;
   color: #38484d;
+  cursor: pointer;
   display: flex;
   font-size: 15px;
   font-weight: 700;
   gap: 8px;
+  line-height: 1.35;
+  margin: 0;
   padding: 6px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.sessionRow:hover {
+  color: #10202a;
+  text-decoration: underline;
 }
 
 .emptyText {
@@ -345,12 +357,122 @@ button {
   margin: 0;
 }
 
+.modalOverlay {
+  align-items: center;
+  background: rgb(31 43 47 / 0.45);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 10;
+}
+
+.sessionEditor {
+  background: #fffdf8;
+  border: 1px solid #e2ddd2;
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgb(31 43 47 / 0.22);
+  max-width: 430px;
+  padding: 16px;
+  width: 100%;
+}
+
+.sessionEditorHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.sessionEditorHeader h2 {
+  font-size: 20px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.sessionFormGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sessionFormGrid label {
+  display: grid;
+  gap: 5px;
+}
+
+.sessionFormGrid label span {
+  color: #647176;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sessionFormGrid input {
+  background: #f8f7f2;
+  border: 1px solid #d9d4c9;
+  border-radius: 8px;
+  color: #1f2b2f;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  min-height: 42px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.sessionEditorActions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr 1fr;
+  margin-top: 16px;
+}
+
+.deleteButton,
+.secondaryButton,
+.saveButton {
+  border: 0;
+  border-radius: 8px;
+  color: #10202a;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 900;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.deleteButton:disabled,
+.secondaryButton:disabled,
+.saveButton:disabled,
+.sessionFormGrid input:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.deleteButton {
+  background: #ffd8cc;
+}
+
+.secondaryButton {
+  background: #eef3f1;
+}
+
+.saveButton {
+  background: #bfe7d0;
+}
+
 @media (max-width: 430px) {
   .screen {
     padding-inline: 14px;
   }
 
   .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sessionFormGrid,
+  .sessionEditorActions {
     grid-template-columns: 1fr;
   }
 }
