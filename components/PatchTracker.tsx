@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { TouchEvent } from "react";
 
 import { dateKey, keyToDate } from "@/lib/dates";
 import type { DayRecord, OptuneSessionRecord, Records } from "@/lib/records";
-import { getOverlapMs, getPeriod, summarize } from "@/lib/utility";
+import { getOverlapMs, getPeriod, summarize, summarizeRunning } from "@/lib/utility";
 import type { Scope } from "@/lib/utility";
 
-const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const pullRefreshThreshold = 70;
+const pullRefreshMax = 96;
 const monthLabels = [
   "January",
   "February",
@@ -40,7 +43,7 @@ function endOfDay(date: Date) {
 
 function startOfWeek(date: Date) {
   const day = startOfDay(date);
-  day.setDate(day.getDate() - day.getDay());
+  day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
   return day;
 }
 
@@ -221,14 +224,14 @@ function makeCalendarWeeks(viewDate: Date) {
   const cursor = startOfWeek(monthStart);
   const weeks: Date[][] = [];
 
-  while (cursor <= monthEnd || cursor.getDay() !== 0) {
+  while (cursor <= monthEnd || cursor.getDay() !== 1) {
     const week: Date[] = [];
     for (let day = 0; day < 7; day += 1) {
       week.push(new Date(cursor));
       cursor.setDate(cursor.getDate() + 1);
     }
     weeks.push(week);
-    if (cursor > monthEnd && cursor.getDay() === 0) {
+    if (cursor > monthEnd && cursor.getDay() === 1) {
       break;
     }
   }
@@ -285,6 +288,10 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const [isSaving, setIsSaving] = useState(false);
   const [editingSession, setEditingSession] = useState<OptuneSessionRecord | null>(null);
   const [sessionDraft, setSessionDraft] = useState<SessionDraft | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const pullStartX = useRef<number | null>(null);
+  const pullStartY = useRef<number | null>(null);
+  const isPulling = useRef(false);
   const openSession = getOpenSession(records);
 
   const selectedDate = keyToDate(selectedKey);
@@ -293,6 +300,8 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const weeks = useMemo(() => makeCalendarWeeks(viewDate), [viewDate]);
   const statsDate = scope === "month" || scope === "year" ? viewDate : selectedDate;
   const stats = summarize(records, statsDate, scope);
+  const runningStats = summarizeRunning(records, statsDate, scope);
+  const showRunningStats = scope === "week" || scope === "month" || scope === "year";
   const activitySessions = scope === "day" || scope === "week" ? getPeriodSessions(records, statsDate, scope) : [];
 
   const scopeTitle =
@@ -399,8 +408,78 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
     }
   }
 
+  async function refreshRecords() {
+    if (isSaving) {
+      return;
+    }
+
+    try {
+      setError("");
+      setIsSaving(true);
+      setRecords(await requestRecords("/api/records", "GET"));
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Something went wrong.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleTouchStart(event: TouchEvent<HTMLElement>) {
+    const touch = event.touches[0];
+    if (!touch || window.scrollY > 0 || isSaving || editingSession) {
+      pullStartX.current = null;
+      pullStartY.current = null;
+      isPulling.current = false;
+      return;
+    }
+
+    pullStartX.current = touch.clientX;
+    pullStartY.current = touch.clientY;
+    isPulling.current = false;
+  }
+
+  function handleTouchMove(event: TouchEvent<HTMLElement>) {
+    const touch = event.touches[0];
+    if (!touch || pullStartX.current === null || pullStartY.current === null || window.scrollY > 0) {
+      return;
+    }
+
+    const deltaX = Math.abs(touch.clientX - pullStartX.current);
+    const deltaY = touch.clientY - pullStartY.current;
+
+    if (deltaY <= 0) {
+      setPullDistance(0);
+      return;
+    }
+
+    if (deltaX > deltaY) {
+      return;
+    }
+
+    if (deltaY > 12) {
+      event.preventDefault();
+      isPulling.current = true;
+      setPullDistance(Math.min(pullRefreshMax, deltaY * 0.45));
+    }
+  }
+
+  function handleTouchEnd() {
+    const shouldRefresh = isPulling.current && pullDistance >= pullRefreshThreshold && !isSaving;
+    pullStartX.current = null;
+    pullStartY.current = null;
+    isPulling.current = false;
+    setPullDistance(0);
+
+    if (shouldRefresh) {
+      void refreshRecords();
+    }
+  }
+
   return (
-    <main className="screen">
+    <main className="screen" onTouchCancel={handleTouchEnd} onTouchEnd={handleTouchEnd} onTouchMove={handleTouchMove} onTouchStart={handleTouchStart}>
+      <div className="pullRefreshIndicator" style={{ transform: `translateY(${pullDistance}px)`, opacity: pullDistance ? 1 : 0 }}>
+        <span aria-hidden="true">↻</span>
+      </div>
       <header className="header">
         <div>
           <h1>Patches</h1>
@@ -505,7 +584,18 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             <p className="statsLabel">{scope.toUpperCase()} STATS</p>
             <h2>{scopeTitle}</h2>
           </div>
-          <div className="percentBadge">{Math.round(stats.percent)}%</div>
+          <div className="percentGroup">
+            <div className="percentBadge">
+              <strong>{Math.round(stats.percent)}%</strong>
+              {showRunningStats ? <span>Total</span> : null}
+            </div>
+            {showRunningStats ? (
+              <div className="percentBadge runningPercentBadge">
+                <strong>{Math.round(runningStats.percent)}%</strong>
+                <span>To date</span>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="statsGrid">
@@ -539,6 +629,13 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
           </div>
         ) : null}
       </section>
+
+      <div className="refreshBar">
+        <button className="refreshButton" disabled={isSaving} onClick={refreshRecords}>
+          <span aria-hidden="true">↻</span>
+          <span>Refresh</span>
+        </button>
+      </div>
 
       {editingSession && sessionDraft ? (
         <div className="modalOverlay" role="presentation">

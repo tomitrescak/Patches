@@ -13,12 +13,16 @@ function endOfDay(date: Date) {
 
 function startOfWeek(date: Date) {
   const day = startOfDay(date);
-  day.setDate(day.getDate() - day.getDay());
+  day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
   return day;
 }
 
 function addDays(date: Date, days: number) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function minDate(left: Date, right: Date) {
+  return left < right ? left : right;
 }
 
 export function getPeriod(date: Date, scope: Scope) {
@@ -79,6 +83,10 @@ function getUtilityStart(records: Records, periodStart: Date, periodEnd: Date, s
 
 export function summarize(records: Records, date: Date, scope: Scope) {
   const { start, end } = getPeriod(date, scope);
+  return summarizePeriod(records, start, end, scope);
+}
+
+function summarizePeriod(records: Records, start: Date, end: Date, scope: Scope) {
   const utilityStart = getUtilityStart(records, start, end, scope);
   let wearMs = 0;
   let patchDays = 0;
@@ -116,4 +124,19 @@ export function summarize(records: Records, date: Date, scope: Scope) {
     start,
     end
   };
+}
+
+export function summarizeRunning(records: Records, date: Date, scope: Scope, today = new Date()) {
+  if (scope === "day") {
+    return summarize(records, date, scope);
+  }
+
+  const { start, end } = getPeriod(date, scope);
+  const runningEnd = minDate(end, endOfDay(today));
+
+  if (runningEnd <= start) {
+    return summarizePeriod(records, start, start, scope);
+  }
+
+  return summarizePeriod(records, start, runningEnd, scope);
 }

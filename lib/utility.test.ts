@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Records } from "@/lib/records";
-import { summarize } from "@/lib/utility";
+import { getPeriod, summarize, summarizeRunning } from "@/lib/utility";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -38,6 +38,13 @@ function julyRecords(): Records {
 }
 
 describe("summarize utility calculations", () => {
+  it("starts weeks on Monday", () => {
+    const period = getPeriod(localDate(2026, 7, 12), "week");
+
+    expect(period.start).toEqual(localDate(2026, 7, 6));
+    expect(period.end).toEqual(localDate(2026, 7, 13));
+  });
+
   it("returns 0 for a week before the first recorded day", () => {
     const records: Records = {
       "2026-03-03": { sessions: [] }
@@ -54,13 +61,13 @@ describe("summarize utility calculations", () => {
     const records: Records = {
       "2026-03-03": { sessions: [] },
       "2026-03-04": {
-        sessions: [session("full-valid-week-tail", localDate(2026, 3, 4), localDate(2026, 3, 8))]
+        sessions: [session("full-valid-week-tail", localDate(2026, 3, 4), localDate(2026, 3, 9))]
       }
     };
 
     const stats = summarize(records, localDate(2026, 3, 3), "week");
 
-    expect(stats.wearMs).toBe(4 * DAY_MS);
+    expect(stats.wearMs).toBe(5 * DAY_MS);
     expect(stats.sessionCount).toBe(1);
     expectPercent(stats.percent, 100);
   });
@@ -68,13 +75,13 @@ describe("summarize utility calculations", () => {
   it("clips weekly wear that starts on the first recorded day", () => {
     const records: Records = {
       "2026-03-03": {
-        sessions: [session("starts-on-first-record", localDate(2026, 3, 3), localDate(2026, 3, 8))]
+        sessions: [session("starts-on-first-record", localDate(2026, 3, 3), localDate(2026, 3, 9))]
       }
     };
 
     const stats = summarize(records, localDate(2026, 3, 3), "week");
 
-    expect(stats.wearMs).toBe(4 * DAY_MS);
+    expect(stats.wearMs).toBe(5 * DAY_MS);
     expect(stats.sessionCount).toBe(1);
     expectPercent(stats.percent, 100);
   });
@@ -95,12 +102,12 @@ describe("summarize utility calculations", () => {
 
   it("returns 0 when the first valid day would be after the selected week ends", () => {
     const records: Records = {
-      "2026-03-07": {
-        sessions: [session("last-day-of-week", localDate(2026, 3, 7), localDate(2026, 3, 8))]
+      "2026-03-08": {
+        sessions: [session("last-day-of-week", localDate(2026, 3, 8), localDate(2026, 3, 9))]
       }
     };
 
-    const stats = summarize(records, localDate(2026, 3, 7), "week");
+    const stats = summarize(records, localDate(2026, 3, 8), "week");
 
     expect(stats.wearMs).toBe(0);
     expect(stats.sessionCount).toBe(0);
@@ -110,8 +117,8 @@ describe("summarize utility calculations", () => {
   it("uses the full denominator for weeks after the first valid day, so missing days reduce utility", () => {
     const records: Records = {
       "2026-03-03": { sessions: [] },
-      "2026-03-08": {
-        sessions: [session("six-of-seven-days", localDate(2026, 3, 8), localDate(2026, 3, 14))]
+      "2026-03-09": {
+        sessions: [session("six-of-seven-days", localDate(2026, 3, 9), localDate(2026, 3, 15))]
       }
     };
 
@@ -122,16 +129,16 @@ describe("summarize utility calculations", () => {
     expectPercent(stats.percent, (6 / 7) * 100);
   });
 
-  it("averages the first valid July week across the days from July 10 through week end", () => {
+  it("averages the first valid July week across the days from July 10 through Sunday", () => {
     const stats = summarize(julyRecords(), localDate(2026, 7, 10), "week");
 
     expect(stats.wearMs).toBe((0.92 + 0.54) * DAY_MS);
     expect(stats.sessionCount).toBe(2);
-    expectPercent(stats.percent, (92 + 54) / 2);
+    expectPercent(stats.percent, (92 + 54) / 3);
   });
 
   it("returns 0 for a July week after the recorded sessions when those missing valid days reduce utility", () => {
-    const stats = summarize(julyRecords(), localDate(2026, 7, 12), "week");
+    const stats = summarize(julyRecords(), localDate(2026, 7, 13), "week");
 
     expect(stats.wearMs).toBe(0);
     expect(stats.sessionCount).toBe(0);
@@ -225,5 +232,45 @@ describe("summarize utility calculations", () => {
     expect(stats.wearMs).toBe((0.92 + 0.54) * DAY_MS);
     expect(stats.sessionCount).toBe(2);
     expectPercent(stats.percent, ((92 + 54) / 22));
+  });
+
+  it("calculates running July monthly utility only through today", () => {
+    const stats = summarizeRunning(julyRecords(), localDate(2026, 7, 12), "month", localDate(2026, 7, 12));
+
+    expect(stats.wearMs).toBe((0.92 + 0.54) * DAY_MS);
+    expect(stats.sessionCount).toBe(2);
+    expectPercent(stats.percent, (92 + 54) / 3);
+  });
+
+  it("calculates running yearly utility only through today", () => {
+    const stats = summarizeRunning(julyRecords(), localDate(2026, 7, 12), "year", localDate(2026, 7, 12));
+
+    expect(stats.wearMs).toBe((0.92 + 0.54) * DAY_MS);
+    expect(stats.sessionCount).toBe(2);
+    expectPercent(stats.percent, (92 + 54) / 3);
+  });
+
+  it("keeps a completed week running utility the same as its final weekly utility", () => {
+    const stats = summarizeRunning(julyRecords(), localDate(2026, 7, 10), "week", localDate(2026, 7, 12));
+
+    expect(stats.wearMs).toBe((0.92 + 0.54) * DAY_MS);
+    expect(stats.sessionCount).toBe(2);
+    expectPercent(stats.percent, (92 + 54) / 3);
+  });
+
+  it("uses only elapsed valid days for the current running week", () => {
+    const stats = summarizeRunning(julyRecords(), localDate(2026, 7, 12), "week", localDate(2026, 7, 12));
+
+    expect(stats.wearMs).toBe((0.92 + 0.54) * DAY_MS);
+    expect(stats.sessionCount).toBe(2);
+    expectPercent(stats.percent, (92 + 54) / 3);
+  });
+
+  it("returns 0 running utility for a future week", () => {
+    const stats = summarizeRunning(julyRecords(), localDate(2026, 7, 20), "week", localDate(2026, 7, 12));
+
+    expect(stats.wearMs).toBe(0);
+    expect(stats.sessionCount).toBe(0);
+    expectPercent(stats.percent, 0);
   });
 });
