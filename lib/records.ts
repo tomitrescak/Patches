@@ -9,6 +9,7 @@ export type OptuneSessionRecord = {
 
 export type DayRecord = {
   patchChanged?: boolean;
+  patchChangedAt?: string;
   sessions: OptuneSessionRecord[];
 };
 
@@ -78,6 +79,7 @@ export async function getRecords(): Promise<Records> {
   days.forEach((day) => {
     records[day.dateKey] = {
       patchChanged: day.patchChanged,
+      patchChangedAt: day.patchChanged ? day.updatedAt.toISOString() : undefined,
       sessions: []
     };
   });

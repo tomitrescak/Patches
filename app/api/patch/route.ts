@@ -11,29 +11,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A valid dateKey is required." }, { status: 400 });
   }
 
-  const day = await prisma.patchDay.upsert({
+  const existingDay = await prisma.patchDay.findUnique({
     where: {
       dateKey: body.dateKey
-    },
-    create: {
-      dateKey: body.dateKey,
-      patchChanged: true
-    },
-    update: {}
+    }
   });
 
-  if (day.patchChanged) {
+  if (existingDay?.patchChanged) {
     await prisma.patchDay.delete({
       where: {
-        id: day.id
+        id: existingDay.id
       }
     });
   } else {
-    await prisma.patchDay.update({
+    await prisma.patchDay.upsert({
       where: {
-        id: day.id
+        dateKey: body.dateKey
       },
-      data: {
+      create: {
+        dateKey: body.dateKey,
+        patchChanged: true
+      },
+      update: {
         patchChanged: true
       }
     });

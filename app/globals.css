@@ -413,6 +413,19 @@ button {
   margin: 0;
 }
 
+.summaryList {
+  display: grid;
+  gap: 6px;
+}
+
+.summaryText {
+  color: #38484d;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
+}
+
 .modalOverlay {
   align-items: center;
   background: rgb(31 43 47 / 0.45);

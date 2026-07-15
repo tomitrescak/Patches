@@ -160,13 +160,13 @@ function getOpenSession(records: Records) {
   return null;
 }
 
-function togglePatchRecord(records: Records, key: string): Records {
+function togglePatchRecord(records: Records, key: string, changedAt: string): Records {
   const record = records[key] ?? emptyRecord();
 
   if (record.patchChanged) {
     const next = { ...records };
     if (record.sessions.length) {
-      next[key] = { ...record, patchChanged: false };
+      next[key] = { ...record, patchChanged: false, patchChangedAt: undefined };
     } else {
       delete next[key];
     }
@@ -177,7 +177,8 @@ function togglePatchRecord(records: Records, key: string): Records {
     ...records,
     [key]: {
       ...record,
-      patchChanged: true
+      patchChanged: true,
+      patchChangedAt: changedAt
     }
   };
 }
@@ -260,6 +261,29 @@ function getPeriodSessions(records: Records, date: Date, scope: Scope) {
   );
 }
 
+function getPeriodPatchChanges(records: Records, date: Date, scope: Scope) {
+  const { start, end } = getPeriod(date, scope);
+
+  return Object.entries(records)
+    .filter(([key, record]) => {
+      const recordDate = keyToDate(key);
+      return record.patchChanged && recordDate >= start && recordDate < end;
+    })
+    .map(([key, record]) => ({ key, changedAt: record.patchChangedAt }))
+    .sort((left, right) => keyToDate(left.key).getTime() - keyToDate(right.key).getTime());
+}
+
+function formatPatchChangeSummary(change: { key: string; changedAt?: string }, showDate: boolean) {
+  const dayLabel = formatShortDate(keyToDate(change.key));
+  const timeLabel = change.changedAt ? formatTime(change.changedAt) : null;
+
+  if (!timeLabel) {
+    return showDate ? `Patches changed on ${dayLabel}.` : "Patches changed.";
+  }
+
+  return showDate ? `Patches changed on ${dayLabel} at ${timeLabel}.` : `Patches changed at ${timeLabel}.`;
+}
+
 async function postRecords(url: string, body?: unknown) {
   return requestRecords(url, "POST", body);
 }
@@ -303,6 +327,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const runningStats = summarizeRunning(records, statsDate, scope);
   const showRunningStats = scope === "week" || scope === "month" || scope === "year";
   const activitySessions = scope === "day" || scope === "week" ? getPeriodSessions(records, statsDate, scope) : [];
+  const patchChanges = getPeriodPatchChanges(records, statsDate, scope);
 
   const scopeTitle =
     scope === "day"
@@ -330,10 +355,11 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   }
 
   function togglePatchChanged() {
+    const changedAt = new Date().toISOString();
     setScope("day");
     void runMutation(
       () => postRecords("/api/patch", { dateKey: selectedKey }),
-      (current) => togglePatchRecord(current, selectedKey)
+      (current) => togglePatchRecord(current, selectedKey, changedAt)
     );
   }
 
@@ -605,12 +631,30 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
           </div>
           <div className="statBox">
             <strong>{stats.patchDays}</strong>
-            <span>Patch days</span>
+            <span>Patch changes</span>
           </div>
           <div className="statBox">
             <strong>{stats.sessionCount}</strong>
             <span>Sessions</span>
           </div>
+        </div>
+
+        <div className="detailBlock">
+          <h3>Patch summary</h3>
+          {patchChanges.length === 0 ? (
+            <p className="emptyText">No patch changes recorded for this {scope}.</p>
+          ) : patchChanges.length === 1 && patchChanges[0] ? (
+            <p className="summaryText">{formatPatchChangeSummary(patchChanges[0], scope !== "day")}</p>
+          ) : (
+            <div className="summaryList">
+              <p className="summaryText">Patches changed {patchChanges.length} times.</p>
+              {patchChanges.map((change) => (
+                <p className="summaryText" key={change.key}>
+                  {formatPatchChangeSummary(change, true)}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
 
         {scope === "day" || scope === "week" ? (
