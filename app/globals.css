@@ -100,6 +100,7 @@ button {
 
 .actionButton {
   align-items: center;
+  background: #eef3f1;
   border: 0;
   border-radius: 8px;
   color: #10202a;
@@ -144,30 +145,6 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
-}
-
-.patchButton {
-  background: #bfe7d0;
-}
-
-.patchUndoButton {
-  background: #e7d9c4;
-}
-
-.optuneOnButton {
-  background: #f6cf82;
-}
-
-.optuneOffButton {
-  background: #a9c7e8;
-}
-
-.exerciseButton {
-  background: #c8d9ff;
-}
-
-.medicineButton {
-  background: #ffd4e0;
 }
 
 .calendarPanel,
