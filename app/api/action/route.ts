@@ -73,6 +73,30 @@ export async function POST(request: Request) {
   return NextResponse.json(await getRecords());
 }
 
+export async function PATCH(request: Request) {
+  const body = (await request.json()) as { id?: unknown; occurredAt?: unknown };
+  const occurredAt = parseRequiredDate(body.occurredAt);
+
+  if (typeof body.id !== "string" || !body.id) {
+    return NextResponse.json({ error: "An action id is required." }, { status: 400 });
+  }
+
+  if (!occurredAt) {
+    return NextResponse.json({ error: "A valid action time is required." }, { status: 400 });
+  }
+
+  await prisma.dailyAction.update({
+    where: {
+      id: body.id
+    },
+    data: {
+      occurredAt
+    }
+  });
+
+  return NextResponse.json(await getRecords());
+}
+
 export async function DELETE(request: Request) {
   const body = (await request.json()) as { id?: unknown };
 

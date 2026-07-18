@@ -1,7 +1,19 @@
 "use client";
 
+import {
+  ArrowClockwise,
+  Bandaids,
+  CaretLeft,
+  CaretRight,
+  Clock,
+  Pill,
+  Play,
+  SneakerMove,
+  Stop,
+  X
+} from "@phosphor-icons/react";
 import { useMemo, useRef, useState } from "react";
-import type { TouchEvent } from "react";
+import type { ReactNode, TouchEvent } from "react";
 
 import { dateKey, keyToDate } from "@/lib/dates";
 import type { DailyActionRecord, DailyActionType, DayRecord, OptuneSessionRecord, Records } from "@/lib/records";
@@ -33,11 +45,16 @@ type SessionDraft = {
   endTime: string;
 };
 
+type ActionDraft = {
+  occurredDate: string;
+  occurredTime: string;
+};
+
 type CalendarMarker = "patch" | "optune" | "exercise" | "medicine";
 
 const actionLabels: Record<DailyActionType, string> = {
-  EXERCISE: "Exercised",
-  MEDICINE: "Took medicine"
+  EXERCISE: "Exercise",
+  MEDICINE: "Medicine"
 };
 
 function startOfDay(date: Date) {
@@ -54,6 +71,14 @@ function startOfWeek(date: Date) {
   return day;
 }
 
+function getWeekNumber(date: Date) {
+  const day = startOfDay(date);
+  day.setDate(day.getDate() + 3 - ((day.getDay() + 6) % 7));
+  const weekOne = new Date(day.getFullYear(), 0, 4);
+
+  return 1 + Math.round(((day.getTime() - weekOne.getTime()) / 86400000 - 3 + ((weekOne.getDay() + 6) % 7)) / 7);
+}
+
 function addDays(date: Date, days: number) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
@@ -63,10 +88,25 @@ function addMonths(date: Date, months: number) {
 }
 
 function formatDuration(ms: number) {
-  const totalMinutes = Math.max(0, Math.round(ms / 60000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}h ${minutes}m`;
+  let remainingMinutes = Math.max(0, Math.round(ms / 60000));
+  const units = [
+    { label: "y", minutes: 365 * 24 * 60 },
+    { label: "mo", minutes: 30 * 24 * 60 },
+    { label: "d", minutes: 24 * 60 },
+    { label: "h", minutes: 60 },
+    { label: "m", minutes: 1 }
+  ];
+  const parts: string[] = [];
+
+  units.forEach((unit) => {
+    const value = Math.floor(remainingMinutes / unit.minutes);
+    if (value > 0) {
+      parts.push(`${value}${unit.label}`);
+      remainingMinutes -= value * unit.minutes;
+    }
+  });
+
+  return parts.length ? parts.join(" ") : "0m";
 }
 
 function formatTime(iso: string) {
@@ -121,6 +161,15 @@ function makeSessionDraft(session: OptuneSessionRecord): SessionDraft {
   };
 }
 
+function makeActionDraft(action: DailyActionRecord): ActionDraft {
+  const occurredAt = new Date(action.occurredAt);
+
+  return {
+    occurredDate: toDateInputValue(occurredAt),
+    occurredTime: toTimeInputValue(occurredAt)
+  };
+}
+
 function draftToIso(draft: SessionDraft) {
   if (!draft.startDate || !draft.startTime) {
     throw new Error("Start date and time are required.");
@@ -150,6 +199,19 @@ function draftToIso(draft: SessionDraft) {
   }
 
   return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function actionDraftToIso(draft: ActionDraft) {
+  if (!draft.occurredDate || !draft.occurredTime) {
+    throw new Error("Date and time are required.");
+  }
+
+  const occurredAt = new Date(`${draft.occurredDate}T${draft.occurredTime}`);
+  if (Number.isNaN(occurredAt.getTime())) {
+    throw new Error("Date and time are invalid.");
+  }
+
+  return occurredAt.toISOString();
 }
 
 function emptyRecord(): DayRecord {
@@ -220,27 +282,6 @@ function toggleDailyActionRecord(records: Records, key: string, type: DailyActio
   }
 
   return addDailyActionRecord(records, key, type, occurredAt);
-}
-
-function deleteDailyActionRecord(records: Records, id: string): Records {
-  const next = { ...records };
-
-  Object.entries(records).forEach(([key, record]) => {
-    const actions = (record.actions ?? []).filter((action) => action.id !== id);
-
-    if (actions.length === (record.actions ?? []).length) {
-      return;
-    }
-
-    if (!record.patchChanged && record.sessions.length === 0 && actions.length === 0) {
-      delete next[key];
-      return;
-    }
-
-    next[key] = { ...record, actions };
-  });
-
-  return next;
 }
 
 function toggleOptuneRecord(records: Records, now: Date): Records {
@@ -345,23 +386,43 @@ function getPeriodActions(records: Records, date: Date, scope: Scope) {
     .sort((left, right) => new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime());
 }
 
-function formatPatchChangeSummary(change: { key: string; changedAt?: string }, showDate: boolean) {
+function formatPatchChangeDate(change: { key: string; changedAt?: string }) {
   const dayLabel = formatShortDate(keyToDate(change.key));
   const timeLabel = change.changedAt ? formatTime(change.changedAt) : null;
 
-  if (!timeLabel) {
-    return showDate ? `Patches changed on ${dayLabel}.` : "Patches changed.";
-  }
-
-  return showDate ? `Patches changed on ${dayLabel} at ${timeLabel}.` : `Patches changed at ${timeLabel}.`;
+  return timeLabel ? `${dayLabel} at ${timeLabel}` : dayLabel;
 }
 
-function formatActionSummary(action: DailyActionRecord, showDate: boolean) {
+function formatActionDate(action: DailyActionRecord) {
   const actionDate = new Date(action.occurredAt);
-  const actionLabel = actionLabels[action.type];
   const timeLabel = formatTime(action.occurredAt);
 
-  return showDate ? `${actionLabel} on ${formatShortDate(actionDate)} at ${timeLabel}.` : `${actionLabel} at ${timeLabel}.`;
+  return `${formatShortDate(actionDate)} at ${timeLabel}`;
+}
+
+function formatCount(count: number) {
+  return `${count} ${count === 1 ? "time" : "times"}`;
+}
+
+function ActivityRow({
+  icon,
+  children,
+  disabled = false,
+  onClick
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button className="activityRow" disabled={disabled} onClick={onClick}>
+      <span className="activityRowIcon" aria-hidden="true">
+        {icon}
+      </span>
+      <span>{children}</span>
+    </button>
+  );
 }
 
 function makeActionOccurrenceIso(key: string, now: Date) {
@@ -442,6 +503,8 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const [isSaving, setIsSaving] = useState(false);
   const [editingSession, setEditingSession] = useState<OptuneSessionRecord | null>(null);
   const [sessionDraft, setSessionDraft] = useState<SessionDraft | null>(null);
+  const [editingAction, setEditingAction] = useState<DailyActionRecord | null>(null);
+  const [actionDraft, setActionDraft] = useState<ActionDraft | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const pullStartX = useRef<number | null>(null);
   const pullStartY = useRef<number | null>(null);
@@ -463,6 +526,14 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const periodActions = getPeriodActions(records, statsDate, scope);
   const exerciseCount = periodActions.filter((action) => action.type === "EXERCISE").length;
   const medicineCount = periodActions.filter((action) => action.type === "MEDICINE").length;
+  const actionGroups = (["EXERCISE", "MEDICINE"] as const)
+    .map((type) => ({
+      type,
+      label: actionLabels[type],
+      dotClass: type === "EXERCISE" ? "exerciseDot" : "medicineDot",
+      actions: periodActions.filter((action) => action.type === type)
+    }))
+    .filter((group) => group.actions.length > 0);
 
   const scopeTitle =
     scope === "day"
@@ -508,11 +579,11 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
     );
   }
 
-  function deleteDailyAction(action: DailyActionRecord) {
-    void runMutation(
-      () => requestRecords("/api/action", "DELETE", { id: action.id }),
-      (current) => deleteDailyActionRecord(current, action.id)
-    );
+  function editDailyAction(action: DailyActionRecord) {
+    setError("");
+    closeSessionEditor();
+    setEditingAction(action);
+    setActionDraft(makeActionDraft(action));
   }
 
   function toggleOptune() {
@@ -538,6 +609,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
 
   function editSession(session: OptuneSessionRecord) {
     setError("");
+    closeActionEditor();
     setEditingSession(session);
     setSessionDraft(makeSessionDraft(session));
   }
@@ -549,6 +621,15 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
 
   function updateSessionDraft(field: keyof SessionDraft, value: string) {
     setSessionDraft((draft) => (draft ? { ...draft, [field]: value } : draft));
+  }
+
+  function closeActionEditor() {
+    setEditingAction(null);
+    setActionDraft(null);
+  }
+
+  function updateActionDraft(field: keyof ActionDraft, value: string) {
+    setActionDraft((draft) => (draft ? { ...draft, [field]: value } : draft));
   }
 
   async function saveSession() {
@@ -586,6 +667,40 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
     }
   }
 
+  async function saveDailyAction() {
+    if (!editingAction || !actionDraft) {
+      return;
+    }
+
+    try {
+      setError("");
+      setIsSaving(true);
+      setRecords(await requestRecords("/api/action", "PATCH", { id: editingAction.id, occurredAt: actionDraftToIso(actionDraft) }));
+      closeActionEditor();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Something went wrong.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteEditingDailyAction() {
+    if (!editingAction) {
+      return;
+    }
+
+    try {
+      setError("");
+      setIsSaving(true);
+      setRecords(await requestRecords("/api/action", "DELETE", { id: editingAction.id }));
+      closeActionEditor();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Something went wrong.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function refreshRecords() {
     if (isSaving) {
       return;
@@ -604,7 +719,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
 
   function handleTouchStart(event: TouchEvent<HTMLElement>) {
     const touch = event.touches[0];
-    if (!touch || window.scrollY > 0 || isSaving || editingSession) {
+    if (!touch || window.scrollY > 0 || isSaving || editingSession || editingAction) {
       pullStartX.current = null;
       pullStartY.current = null;
       isPulling.current = false;
@@ -656,65 +771,65 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   return (
     <main className="screen" onTouchCancel={handleTouchEnd} onTouchEnd={handleTouchEnd} onTouchMove={handleTouchMove} onTouchStart={handleTouchStart}>
       <div className="pullRefreshIndicator" style={{ transform: `translateY(${pullDistance}px)`, opacity: pullDistance ? 1 : 0 }}>
-        <span aria-hidden="true">↻</span>
+        <ArrowClockwise aria-hidden="true" size={18} weight="bold" />
       </div>
-      <header className="header">
-        <div>
-          <h1>Patches</h1>
-          <p>Patch changes and Optune wear time</p>
-        </div>
-        {isSaving ? <span className="saving">Saving</span> : null}
-      </header>
+      {isSaving ? <span className="saving">Saving</span> : null}
 
       {error ? <p className="error">{error}</p> : null}
 
       <section className="actions" aria-label="Actions">
         <button
-          aria-label={didChangePatchesSelectedDay ? "Undo changed patches" : "Changed patches"}
-          aria-pressed={didChangePatchesSelectedDay}
-          className={`actionButton ${didChangePatchesSelectedDay ? "actionButtonPressed" : ""}`}
-          disabled={isSaving}
-          onClick={togglePatchChanged}
-        >
-          <span aria-hidden="true">+</span>
-          <span>Patches</span>
-        </button>
-        <button
           aria-label={openSession ? "Turn off Optune" : "Turn on Optune"}
           aria-pressed={Boolean(openSession)}
-          className={`actionButton ${openSession ? "actionButtonPressed" : ""}`}
+          className={`actionButton ${openSession ? "actionButtonPressed optuneActionActive" : ""}`}
           disabled={isSaving}
           onClick={toggleOptune}
         >
-          <span aria-hidden="true">{openSession ? "||" : ">"}</span>
-          <span>Optune</span>
+          <span aria-hidden="true">{openSession ? <Stop size={18} weight="fill" /> : <Play size={18} weight="fill" />}</span>
+          <span>{openSession ? "Turn Optune off" : "Turn Optune on"}</span>
+        </button>
+        <button
+          aria-label={didChangePatchesSelectedDay ? "Undo changed patches" : "Changed patches"}
+          aria-pressed={didChangePatchesSelectedDay}
+          className={`actionButton ${didChangePatchesSelectedDay ? "actionButtonPressed patchActionActive" : ""}`}
+          disabled={isSaving}
+          onClick={togglePatchChanged}
+        >
+          <span aria-hidden="true">
+            <Bandaids size={18} weight="bold" />
+          </span>
+          <span>Changed Patches</span>
         </button>
         <button
           aria-label={didExerciseSelectedDay ? "Undo exercised" : "Exercised"}
           aria-pressed={didExerciseSelectedDay}
-          className={`actionButton ${didExerciseSelectedDay ? "actionButtonPressed" : ""}`}
+          className={`actionButton ${didExerciseSelectedDay ? "actionButtonPressed exerciseActionActive" : ""}`}
           disabled={isSaving}
           onClick={() => toggleDailyAction("EXERCISE")}
         >
-          <span aria-hidden="true">✓</span>
-          <span>Exercise</span>
+          <span aria-hidden="true">
+            <SneakerMove size={18} weight="bold" />
+          </span>
+          <span>Exercied</span>
         </button>
         <button
           aria-label={didTakeMedicineSelectedDay ? "Undo medicine" : "Took medicine"}
           aria-pressed={didTakeMedicineSelectedDay}
-          className={`actionButton ${didTakeMedicineSelectedDay ? "actionButtonPressed" : ""}`}
+          className={`actionButton ${didTakeMedicineSelectedDay ? "actionButtonPressed medicineActionActive" : ""}`}
           disabled={isSaving}
           onClick={() => toggleDailyAction("MEDICINE")}
         >
-          <span aria-hidden="true">+</span>
-          <span>Meds</span>
+          <span aria-hidden="true">
+            <Pill size={18} weight="bold" />
+          </span>
+          <span>Took Meds</span>
         </button>
       </section>
 
       <section className="calendarPanel" aria-label="Calendar">
         <div className="monthBar">
           <button className="iconButton" aria-label="Previous month" onClick={() => setViewDate((date) => addMonths(date, -1))}>
-            ‹
+            <CaretLeft aria-hidden="true" size={24} weight="bold" />
           </button>
           <div className="monthTitle">
             <button className="monthButton" onClick={() => setScope("month")}>
@@ -725,7 +840,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             </button>
           </div>
           <button className="iconButton" aria-label="Next month" onClick={() => setViewDate((date) => addMonths(date, 1))}>
-            ›
+            <CaretRight aria-hidden="true" size={24} weight="bold" />
           </button>
         </div>
 
@@ -743,14 +858,15 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
           }
 
           const weekKey = dateKey(firstDay);
+          const weekNumber = getWeekNumber(firstDay);
           return (
             <div className="weekRow" key={weekKey}>
               <button
-                aria-label={`Show week statistics from ${formatShortDate(firstDay)}`}
+                aria-label={`Show week ${weekNumber} statistics from ${formatShortDate(firstDay)}`}
                 className={`weekRail ${scope === "week" && dateKey(startOfWeek(selectedDate)) === weekKey ? "weekRailActive" : ""}`}
                 onClick={() => selectWeek(firstDay)}
               >
-                W
+                {weekNumber}
               </button>
               {week.map((day) => {
                 const key = dateKey(day);
@@ -795,18 +911,6 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             <p className="statsLabel">{scope.toUpperCase()} STATS</p>
             <h2>{scopeTitle}</h2>
           </div>
-          <div className="percentGroup">
-            <div className="percentBadge">
-              <strong>{Math.round(stats.percent)}%</strong>
-              {showRunningStats ? <span>Total</span> : null}
-            </div>
-            {showRunningStats ? (
-              <div className="percentBadge runningPercentBadge">
-                <strong>{Math.round(runningStats.percent)}%</strong>
-                <span>To date</span>
-              </div>
-            ) : null}
-          </div>
         </div>
 
         <div className="statsGrid">
@@ -814,13 +918,19 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             <strong>{formatDuration(stats.wearMs)}</strong>
             <span>Optune worn</span>
           </div>
+          <div className="statBox totalStatBox">
+            <strong>{Math.round(stats.percent)}%</strong>
+            <span>Total</span>
+          </div>
+          {showRunningStats ? (
+            <div className="statBox toDateStatBox">
+              <strong>{Math.round(runningStats.percent)}%</strong>
+              <span>To date</span>
+            </div>
+          ) : null}
           <div className="statBox">
             <strong>{stats.patchDays}</strong>
             <span>Patch changes</span>
-          </div>
-          <div className="statBox">
-            <strong>{stats.sessionCount}</strong>
-            <span>Sessions</span>
           </div>
           <div className="statBox">
             <strong>{exerciseCount}</strong>
@@ -833,37 +943,51 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
         </div>
 
         <div className="detailBlock">
-          <h3>Patch summary</h3>
-          {patchChanges.length === 0 ? (
-            <p className="emptyText">No patch changes recorded for this {scope}.</p>
-          ) : patchChanges.length === 1 && patchChanges[0] ? (
-            <p className="summaryText">{formatPatchChangeSummary(patchChanges[0], scope !== "day")}</p>
-          ) : (
-            <div className="summaryList">
-              <p className="summaryText">Patches changed {patchChanges.length} times.</p>
-              {patchChanges.map((change) => (
-                <p className="summaryText" key={change.key}>
-                  {formatPatchChangeSummary(change, true)}
-                </p>
-              ))}
+          {patchChanges.length ? (
+            <div className="actionLog">
+              <section className="actionGroup">
+                <div className="actionGroupHeader">
+                  <span className="calendarDot patchDot" aria-hidden="true" />
+                  <strong>Patches</strong>
+                  <span>{formatCount(patchChanges.length)}</span>
+                </div>
+                <div className="actionDates">
+                  {patchChanges.map((change) => (
+                    <div className="actionRow" key={change.key}>
+                      <span className="actionDate">{formatPatchChangeDate(change)}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
             </div>
+          ) : (
+            <p className="emptyText">No patch changes recorded for this {scope}.</p>
           )}
         </div>
 
         <div className="detailBlock">
-          <h3>Other actions</h3>
-          {periodActions.length ? (
+          {actionGroups.length ? (
             <div className="actionLog">
-              {periodActions.map((action) => (
-                <div className="actionRow" key={action.id}>
-                  <span className="actionSummary">
-                    <span className={`calendarDot ${action.type === "EXERCISE" ? "exerciseDot" : "medicineDot"}`} aria-hidden="true" />
-                    <span>{formatActionSummary(action, scope !== "day")}</span>
-                  </span>
-                  <button className="inlineDeleteButton" disabled={isSaving} onClick={() => deleteDailyAction(action)}>
-                    Delete
-                  </button>
-                </div>
+              {actionGroups.map((group) => (
+                <section className="actionGroup" key={group.type}>
+                  <div className="actionGroupHeader">
+                    <span className={`calendarDot ${group.dotClass}`} aria-hidden="true" />
+                    <strong>{group.label}</strong>
+                    <span>{formatCount(group.actions.length)}</span>
+                  </div>
+                  <div className="actionDates">
+                    {group.actions.map((action) => (
+                      <ActivityRow
+                        disabled={isSaving}
+                        icon={<Clock size={18} weight="bold" />}
+                        key={action.id}
+                        onClick={() => editDailyAction(action)}
+                      >
+                        {formatActionDate(action)}
+                      </ActivityRow>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
@@ -876,10 +1000,9 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             <h3>Optune activity</h3>
             {activitySessions.length ? (
               activitySessions.map((session) => (
-                <button className="sessionRow" key={session.id} onClick={() => editSession(session)}>
-                  <span aria-hidden="true">◷</span>
-                  <span>{formatSessionRange(session, scope === "week")}</span>
-                </button>
+                <ActivityRow icon={<Clock size={18} weight="bold" />} key={session.id} onClick={() => editSession(session)}>
+                  {formatSessionRange(session, scope === "week")}
+                </ActivityRow>
               ))
             ) : (
               <p className="emptyText">No Optune sessions recorded for this {scope}.</p>
@@ -890,7 +1013,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
 
       <div className="refreshBar">
         <button className="refreshButton" disabled={isSaving} onClick={refreshRecords}>
-          <span aria-hidden="true">↻</span>
+          <ArrowClockwise aria-hidden="true" size={16} weight="bold" />
           <span>Refresh</span>
         </button>
       </div>
@@ -904,7 +1027,7 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
                 <h2>Edit time</h2>
               </div>
               <button className="iconButton" aria-label="Close editor" disabled={isSaving} onClick={closeSessionEditor}>
-                ×
+                <X aria-hidden="true" size={22} weight="bold" />
               </button>
             </div>
 
@@ -955,6 +1078,55 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
                 Cancel
               </button>
               <button className="saveButton" disabled={isSaving} onClick={saveSession}>
+                Save
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {editingAction && actionDraft ? (
+        <div className="modalOverlay" role="presentation">
+          <section className="sessionEditor" aria-label={`Edit ${actionLabels[editingAction.type]}`} role="dialog" aria-modal="true">
+            <div className="sessionEditorHeader">
+              <div>
+                <p className="statsLabel">{actionLabels[editingAction.type].toUpperCase()}</p>
+                <h2>Edit time</h2>
+              </div>
+              <button className="iconButton" aria-label="Close editor" disabled={isSaving} onClick={closeActionEditor}>
+                <X aria-hidden="true" size={22} weight="bold" />
+              </button>
+            </div>
+
+            <div className="sessionFormGrid">
+              <label>
+                <span>Date</span>
+                <input
+                  disabled={isSaving}
+                  type="date"
+                  value={actionDraft.occurredDate}
+                  onChange={(event) => updateActionDraft("occurredDate", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Time</span>
+                <input
+                  disabled={isSaving}
+                  type="time"
+                  value={actionDraft.occurredTime}
+                  onChange={(event) => updateActionDraft("occurredTime", event.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="sessionEditorActions">
+              <button className="deleteButton" disabled={isSaving} onClick={deleteEditingDailyAction}>
+                Delete
+              </button>
+              <button className="secondaryButton" disabled={isSaving} onClick={closeActionEditor}>
+                Cancel
+              </button>
+              <button className="saveButton" disabled={isSaving} onClick={saveDailyAction}>
                 Save
               </button>
             </div>

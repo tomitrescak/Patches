@@ -25,11 +25,11 @@ button {
 .screen {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   margin: 0 auto;
   max-width: 720px;
   min-height: 100vh;
-  padding: 20px 18px 34px;
+  padding: 12px 18px 34px;
 }
 
 .pullRefreshIndicator {
@@ -54,23 +54,84 @@ button {
   z-index: 20;
 }
 
-.header {
+.loadingScreen {
+  animation: loadingFadeIn 160ms ease-out;
+}
+
+.loadingAction,
+.loadingDay,
+.loadingIcon,
+.loadingStat,
+.loadingStatsTitle,
+.loadingTitle {
+  animation: loadingPulse 1200ms ease-in-out infinite;
+  background: #e8e4db;
+  border-radius: 8px;
+}
+
+.loadingAction {
+  min-height: 58px;
+}
+
+.loadingPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.loadingMonthBar {
   align-items: center;
   display: flex;
   justify-content: space-between;
-  gap: 16px;
 }
 
-.header h1 {
-  font-size: 34px;
-  line-height: 1;
-  margin: 0 0 5px;
+.loadingIcon {
+  height: 42px;
+  width: 42px;
 }
 
-.header p {
-  color: #627075;
-  font-size: 15px;
-  margin: 0;
+.loadingTitle {
+  height: 38px;
+  width: 116px;
+}
+
+.loadingCalendarGrid {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.loadingDay {
+  aspect-ratio: 1;
+}
+
+.loadingStatsTitle {
+  height: 44px;
+  width: 154px;
+}
+
+.loadingStat {
+  min-height: 72px;
+}
+
+@keyframes loadingFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes loadingPulse {
+  0%,
+  100% {
+    opacity: 0.52;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 .saving,
@@ -95,13 +156,13 @@ button {
 .actions {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1.35fr 1fr 1fr 1fr;
 }
 
 .actionButton {
   align-items: center;
-  background: #eef3f1;
-  border: 0;
+  background: #f8f7f2;
+  border: 1px solid #d9d4c9;
   border-radius: 8px;
   color: #10202a;
   cursor: pointer;
@@ -124,26 +185,54 @@ button {
 }
 
 .actionButtonPressed {
-  box-shadow:
-    inset 0 0 0 2px rgb(16 32 42 / 0.45),
-    0 2px 0 rgb(16 32 42 / 0.14);
+  box-shadow: none;
+}
+
+.patchActionActive {
+  background: #8fd3aa;
+  border-color: transparent;
+  color: #163828;
+}
+
+.optuneActionActive {
+  background: #2f7fc7;
+  border-color: transparent;
+  color: white;
+}
+
+.exerciseActionActive {
+  background: #5c68d9;
+  border-color: transparent;
+  color: white;
+}
+
+.medicineActionActive {
+  background: #d94478;
+  border-color: transparent;
+  color: white;
 }
 
 .actionButton span:first-child {
   align-items: center;
   display: inline-flex;
-  font-size: 16px;
-  font-weight: 900;
   height: 20px;
   justify-content: center;
   line-height: 1;
   width: 20px;
 }
 
+.actionButton svg,
+.activityRow svg,
+.iconButton svg,
+.refreshButton svg,
+.pullRefreshIndicator svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
 .actionButton span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
   width: 100%;
 }
 
@@ -325,13 +414,6 @@ button {
   padding: 16px;
 }
 
-.statsHeader {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-}
-
 .statsLabel {
   color: #7b8588;
   font-size: 11px;
@@ -345,57 +427,10 @@ button {
   margin: 0;
 }
 
-.percentGroup {
-  display: flex;
-  gap: 8px;
-}
-
-.percentBadge {
-  align-items: center;
-  background: #263238;
-  border-radius: 8px;
-  color: white;
-  display: flex;
-  flex-direction: column;
-  font-size: 18px;
-  font-weight: 900;
-  justify-content: center;
-  min-height: 48px;
-  min-width: 64px;
-  padding: 0 10px;
-}
-
-.percentBadge strong,
-.percentBadge span {
-  display: block;
-}
-
-.percentBadge strong {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.percentBadge span {
-  color: #d5dedc;
-  font-size: 10px;
-  line-height: 1;
-  margin-top: 4px;
-  text-transform: uppercase;
-}
-
-.runningPercentBadge {
-  background: #eef3f1;
-  color: #263238;
-}
-
-.runningPercentBadge span {
-  color: #647176;
-}
-
 .statsGrid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   margin-top: 16px;
 }
 
@@ -424,6 +459,27 @@ button {
   margin-top: 5px;
 }
 
+.totalStatBox {
+  background: #263238;
+}
+
+.totalStatBox strong,
+.totalStatBox span {
+  color: white;
+}
+
+.toDateStatBox {
+  background: #dfe7e3;
+}
+
+.toDateStatBox strong {
+  color: #263238;
+}
+
+.toDateStatBox span {
+  color: #526268;
+}
+
 .detailBlock {
   border-top: 1px solid #e3ded3;
   margin-top: 16px;
@@ -435,7 +491,7 @@ button {
   margin: 0 0 8px;
 }
 
-.sessionRow {
+.activityRow {
   align-items: center;
   background: transparent;
   border: 0;
@@ -452,9 +508,22 @@ button {
   width: 100%;
 }
 
-.sessionRow:hover {
+.activityRow:hover {
   color: #10202a;
   text-decoration: underline;
+}
+
+.activityRow:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.activityRowIcon {
+  align-items: center;
+  display: inline-flex;
+  height: 18px;
+  justify-content: center;
+  width: 18px;
 }
 
 .emptyText {
@@ -464,57 +533,55 @@ button {
   margin: 0;
 }
 
-.summaryList {
-  display: grid;
-  gap: 6px;
-}
-
-.summaryText {
-  color: #38484d;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.35;
-  margin: 0;
-}
-
 .actionLog {
   display: grid;
+  gap: 12px;
+}
+
+.actionGroup {
+  display: grid;
   gap: 8px;
+}
+
+.actionGroupHeader {
+  align-items: center;
+  color: #38484d;
+  display: grid;
+  font-size: 15px;
+  gap: 8px;
+  grid-template-columns: auto 1fr auto;
+  line-height: 1.25;
+}
+
+.actionGroupHeader strong {
+  color: #1f2b2f;
+  font-weight: 900;
+}
+
+.actionGroupHeader span:last-child {
+  color: #647176;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.actionDates {
+  display: grid;
+  gap: 2px;
 }
 
 .actionRow {
   align-items: center;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  min-height: 31px;
+  padding: 4px 0;
 }
 
-.actionSummary {
-  align-items: center;
+.actionDate {
   color: #38484d;
-  display: flex;
   font-size: 15px;
   font-weight: 700;
-  gap: 8px;
   line-height: 1.35;
   min-width: 0;
-}
-
-.inlineDeleteButton {
-  background: #ffe6df;
-  border: 0;
-  border-radius: 8px;
-  color: #8d2d16;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 900;
-  min-height: 32px;
-  padding: 0 10px;
-}
-
-.inlineDeleteButton:disabled {
-  cursor: wait;
-  opacity: 0.7;
 }
 
 .modalOverlay {
