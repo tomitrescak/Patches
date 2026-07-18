@@ -94,7 +94,8 @@ button {
 
 .actions {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .actionButton {
@@ -104,11 +105,16 @@ button {
   color: #10202a;
   cursor: pointer;
   display: flex;
-  font-size: 16px;
+  flex-direction: column;
+  font-size: 12px;
   font-weight: 800;
-  gap: 10px;
-  min-height: 54px;
-  padding: 0 16px;
+  gap: 4px;
+  justify-content: center;
+  line-height: 1.05;
+  min-height: 58px;
+  min-width: 0;
+  padding: 8px 4px;
+  text-align: center;
 }
 
 .actionButton:disabled {
@@ -116,13 +122,28 @@ button {
   opacity: 0.75;
 }
 
+.actionButtonPressed {
+  box-shadow:
+    inset 0 0 0 2px rgb(16 32 42 / 0.45),
+    0 2px 0 rgb(16 32 42 / 0.14);
+}
+
 .actionButton span:first-child {
   align-items: center;
   display: inline-flex;
+  font-size: 16px;
   font-weight: 900;
-  height: 22px;
+  height: 20px;
   justify-content: center;
-  width: 22px;
+  line-height: 1;
+  width: 20px;
+}
+
+.actionButton span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 
 .patchButton {
@@ -139,6 +160,14 @@ button {
 
 .optuneOffButton {
   background: #a9c7e8;
+}
+
+.exerciseButton {
+  background: #c8d9ff;
+}
+
+.medicineButton {
+  background: #ffd4e0;
 }
 
 .calendarPanel,
@@ -243,13 +272,19 @@ button {
 }
 
 .dayCell {
+  align-items: center;
   aspect-ratio: 1;
   background: #f8f7f2;
   border: 2px solid transparent;
   color: #243238;
+  display: flex;
+  flex-direction: column;
   font-size: 15px;
   font-weight: 900;
+  gap: 3px;
+  justify-content: center;
   min-width: 0;
+  padding: 3px;
 }
 
 .dayCellMuted {
@@ -264,10 +299,49 @@ button {
 
 .patchDay {
   background: #8fd3aa;
+  color: #163828;
 }
 
 .selectedDay {
   border-color: #263238;
+}
+
+.dayNumber {
+  display: block;
+  line-height: 1;
+}
+
+.calendarMarkers {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  justify-content: center;
+  min-height: 12px;
+  width: 100%;
+}
+
+.calendarDot {
+  border-radius: 999px;
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+}
+
+.patchDot {
+  background: #2d9d5b;
+}
+
+.optuneDot {
+  background: #2f7fc7;
+}
+
+.exerciseDot {
+  background: #5c68d9;
+}
+
+.medicineDot {
+  background: #d94478;
 }
 
 .statsPanel {
@@ -344,7 +418,7 @@ button {
 .statsGrid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
   margin-top: 16px;
 }
 
@@ -424,6 +498,46 @@ button {
   font-weight: 700;
   line-height: 1.35;
   margin: 0;
+}
+
+.actionLog {
+  display: grid;
+  gap: 8px;
+}
+
+.actionRow {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+}
+
+.actionSummary {
+  align-items: center;
+  color: #38484d;
+  display: flex;
+  font-size: 15px;
+  font-weight: 700;
+  gap: 8px;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.inlineDeleteButton {
+  background: #ffe6df;
+  border: 0;
+  border-radius: 8px;
+  color: #8d2d16;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.inlineDeleteButton:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .modalOverlay {

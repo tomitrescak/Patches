@@ -25,3 +25,19 @@ model OptuneSession {
   @@index([startAt])
   @@index([endAt])
 }
+
+enum DailyActionType {
+  EXERCISE
+  MEDICINE
+}
+
+model DailyAction {
+  id         String          @id @default(cuid())
+  type       DailyActionType
+  occurredAt DateTime
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([occurredAt])
+  @@index([type])
+}

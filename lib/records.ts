@@ -7,16 +7,25 @@ export type OptuneSessionRecord = {
   end?: string;
 };
 
+export type DailyActionType = "EXERCISE" | "MEDICINE";
+
+export type DailyActionRecord = {
+  id: string;
+  type: DailyActionType;
+  occurredAt: string;
+};
+
 export type DayRecord = {
   patchChanged?: boolean;
   patchChangedAt?: string;
   sessions: OptuneSessionRecord[];
+  actions?: DailyActionRecord[];
 };
 
 export type Records = Record<string, DayRecord>;
 
 function emptyRecord(): DayRecord {
-  return { sessions: [] };
+  return { sessions: [], actions: [] };
 }
 
 function startOfDay(date: Date) {
@@ -61,7 +70,7 @@ function addSessionToTouchedDays(records: Records, session: { id: string; startA
 }
 
 export async function getRecords(): Promise<Records> {
-  const [days, sessions] = await Promise.all([
+  const [days, sessions, actions] = await Promise.all([
     prisma.patchDay.findMany({
       orderBy: {
         dateKey: "asc"
@@ -70,6 +79,11 @@ export async function getRecords(): Promise<Records> {
     prisma.optuneSession.findMany({
       orderBy: {
         startAt: "asc"
+      }
+    }),
+    prisma.dailyAction.findMany({
+      orderBy: {
+        occurredAt: "asc"
       }
     })
   ]);
@@ -80,12 +94,29 @@ export async function getRecords(): Promise<Records> {
     records[day.dateKey] = {
       patchChanged: day.patchChanged,
       patchChangedAt: day.patchChanged ? day.updatedAt.toISOString() : undefined,
-      sessions: []
+      sessions: [],
+      actions: []
     };
   });
 
   sessions.forEach((session) => {
     addSessionToTouchedDays(records, session);
+  });
+
+  actions.forEach((action) => {
+    const key = dateKey(action.occurredAt);
+    const record = records[key] ?? emptyRecord();
+    records[key] = {
+      ...record,
+      actions: [
+        ...(record.actions ?? []),
+        {
+          id: action.id,
+          type: action.type,
+          occurredAt: action.occurredAt.toISOString()
+        }
+      ]
+    };
   });
 
   return records;

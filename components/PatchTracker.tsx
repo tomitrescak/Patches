@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import type { TouchEvent } from "react";
 
 import { dateKey, keyToDate } from "@/lib/dates";
-import type { DayRecord, OptuneSessionRecord, Records } from "@/lib/records";
+import type { DailyActionRecord, DailyActionType, DayRecord, OptuneSessionRecord, Records } from "@/lib/records";
 import { getOverlapMs, getPeriod, summarize, summarizeRunning } from "@/lib/utility";
 import type { Scope } from "@/lib/utility";
 
@@ -31,6 +31,13 @@ type SessionDraft = {
   startTime: string;
   endDate: string;
   endTime: string;
+};
+
+type CalendarMarker = "patch" | "optune" | "exercise" | "medicine";
+
+const actionLabels: Record<DailyActionType, string> = {
+  EXERCISE: "Exercised",
+  MEDICINE: "Took medicine"
 };
 
 function startOfDay(date: Date) {
@@ -146,7 +153,7 @@ function draftToIso(draft: SessionDraft) {
 }
 
 function emptyRecord(): DayRecord {
-  return { sessions: [] };
+  return { sessions: [], actions: [] };
 }
 
 function getOpenSession(records: Records) {
@@ -165,7 +172,7 @@ function togglePatchRecord(records: Records, key: string, changedAt: string): Re
 
   if (record.patchChanged) {
     const next = { ...records };
-    if (record.sessions.length) {
+    if (record.sessions.length || record.actions?.length) {
       next[key] = { ...record, patchChanged: false, patchChangedAt: undefined };
     } else {
       delete next[key];
@@ -181,6 +188,59 @@ function togglePatchRecord(records: Records, key: string, changedAt: string): Re
       patchChangedAt: changedAt
     }
   };
+}
+
+function addDailyActionRecord(records: Records, key: string, type: DailyActionType, occurredAt: string): Records {
+  const record = records[key] ?? emptyRecord();
+
+  return {
+    ...records,
+    [key]: {
+      ...record,
+      actions: [...(record.actions ?? []), { id: `optimistic-${type}-${occurredAt}`, type, occurredAt }]
+    }
+  };
+}
+
+function toggleDailyActionRecord(records: Records, key: string, type: DailyActionType, occurredAt: string): Records {
+  const record = records[key] ?? emptyRecord();
+  const actions = record.actions ?? [];
+
+  if (actions.some((action) => action.type === type)) {
+    const nextActions = actions.filter((action) => action.type !== type);
+    const next = { ...records };
+
+    if (!record.patchChanged && record.sessions.length === 0 && nextActions.length === 0) {
+      delete next[key];
+    } else {
+      next[key] = { ...record, actions: nextActions };
+    }
+
+    return next;
+  }
+
+  return addDailyActionRecord(records, key, type, occurredAt);
+}
+
+function deleteDailyActionRecord(records: Records, id: string): Records {
+  const next = { ...records };
+
+  Object.entries(records).forEach(([key, record]) => {
+    const actions = (record.actions ?? []).filter((action) => action.id !== id);
+
+    if (actions.length === (record.actions ?? []).length) {
+      return;
+    }
+
+    if (!record.patchChanged && record.sessions.length === 0 && actions.length === 0) {
+      delete next[key];
+      return;
+    }
+
+    next[key] = { ...record, actions };
+  });
+
+  return next;
 }
 
 function toggleOptuneRecord(records: Records, now: Date): Records {
@@ -273,6 +333,18 @@ function getPeriodPatchChanges(records: Records, date: Date, scope: Scope) {
     .sort((left, right) => keyToDate(left.key).getTime() - keyToDate(right.key).getTime());
 }
 
+function getPeriodActions(records: Records, date: Date, scope: Scope) {
+  const { start, end } = getPeriod(date, scope);
+
+  return Object.values(records)
+    .flatMap((record) => record.actions ?? [])
+    .filter((action) => {
+      const occurredAt = new Date(action.occurredAt);
+      return occurredAt >= start && occurredAt < end;
+    })
+    .sort((left, right) => new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime());
+}
+
 function formatPatchChangeSummary(change: { key: string; changedAt?: string }, showDate: boolean) {
   const dayLabel = formatShortDate(keyToDate(change.key));
   const timeLabel = change.changedAt ? formatTime(change.changedAt) : null;
@@ -282,6 +354,64 @@ function formatPatchChangeSummary(change: { key: string; changedAt?: string }, s
   }
 
   return showDate ? `Patches changed on ${dayLabel} at ${timeLabel}.` : `Patches changed at ${timeLabel}.`;
+}
+
+function formatActionSummary(action: DailyActionRecord, showDate: boolean) {
+  const actionDate = new Date(action.occurredAt);
+  const actionLabel = actionLabels[action.type];
+  const timeLabel = formatTime(action.occurredAt);
+
+  return showDate ? `${actionLabel} on ${formatShortDate(actionDate)} at ${timeLabel}.` : `${actionLabel} at ${timeLabel}.`;
+}
+
+function makeActionOccurrenceIso(key: string, now: Date) {
+  const occurredAt = keyToDate(key);
+  occurredAt.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  return occurredAt.toISOString();
+}
+
+function getCalendarMarkers(record?: DayRecord): CalendarMarker[] {
+  if (!record) {
+    return [];
+  }
+
+  const actions = record.actions ?? [];
+  const markers: CalendarMarker[] = [];
+
+  if (record.patchChanged) {
+    markers.push("patch");
+  }
+
+  if (record.sessions.length) {
+    markers.push("optune");
+  }
+
+  if (actions.some((action) => action.type === "EXERCISE")) {
+    markers.push("exercise");
+  }
+
+  if (actions.some((action) => action.type === "MEDICINE")) {
+    markers.push("medicine");
+  }
+
+  return markers;
+}
+
+function getDayAriaLabel(day: Date, record?: DayRecord) {
+  const eventLabels = getCalendarMarkers(record).map((marker) => {
+    if (marker === "patch") {
+      return "patch change";
+    }
+
+    if (marker === "optune") {
+      return "Optune activity";
+    }
+
+    return marker === "exercise" ? "exercise" : "medicine";
+  });
+  const base = day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+  return eventLabels.length ? `${base}: ${eventLabels.join(", ")}` : base;
 }
 
 async function postRecords(url: string, body?: unknown) {
@@ -321,6 +451,8 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const selectedDate = keyToDate(selectedKey);
   const selectedRecord = records[selectedKey] ?? emptyRecord();
   const didChangePatchesSelectedDay = Boolean(selectedRecord.patchChanged);
+  const didExerciseSelectedDay = Boolean(selectedRecord.actions?.some((action) => action.type === "EXERCISE"));
+  const didTakeMedicineSelectedDay = Boolean(selectedRecord.actions?.some((action) => action.type === "MEDICINE"));
   const weeks = useMemo(() => makeCalendarWeeks(viewDate), [viewDate]);
   const statsDate = scope === "month" || scope === "year" ? viewDate : selectedDate;
   const stats = summarize(records, statsDate, scope);
@@ -328,6 +460,9 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
   const showRunningStats = scope === "week" || scope === "month" || scope === "year";
   const activitySessions = scope === "day" || scope === "week" ? getPeriodSessions(records, statsDate, scope) : [];
   const patchChanges = getPeriodPatchChanges(records, statsDate, scope);
+  const periodActions = getPeriodActions(records, statsDate, scope);
+  const exerciseCount = periodActions.filter((action) => action.type === "EXERCISE").length;
+  const medicineCount = periodActions.filter((action) => action.type === "MEDICINE").length;
 
   const scopeTitle =
     scope === "day"
@@ -360,6 +495,23 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
     void runMutation(
       () => postRecords("/api/patch", { dateKey: selectedKey }),
       (current) => togglePatchRecord(current, selectedKey, changedAt)
+    );
+  }
+
+  function toggleDailyAction(type: DailyActionType) {
+    const now = new Date();
+    const occurredAt = makeActionOccurrenceIso(selectedKey, now);
+    setScope("day");
+    void runMutation(
+      () => postRecords("/api/action", { type, occurredAt }),
+      (current) => toggleDailyActionRecord(current, selectedKey, type, occurredAt)
+    );
+  }
+
+  function deleteDailyAction(action: DailyActionRecord) {
+    void runMutation(
+      () => requestRecords("/api/action", "DELETE", { id: action.id }),
+      (current) => deleteDailyActionRecord(current, action.id)
     );
   }
 
@@ -518,20 +670,44 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
 
       <section className="actions" aria-label="Actions">
         <button
-          className={`actionButton ${didChangePatchesSelectedDay ? "patchUndoButton" : "patchButton"}`}
+          aria-label={didChangePatchesSelectedDay ? "Undo changed patches" : "Changed patches"}
+          aria-pressed={didChangePatchesSelectedDay}
+          className={`actionButton ${didChangePatchesSelectedDay ? "actionButtonPressed" : ""}`}
           disabled={isSaving}
           onClick={togglePatchChanged}
         >
           <span aria-hidden="true">+</span>
-          <span>Changed patches</span>
+          <span>Patches</span>
         </button>
         <button
-          className={`actionButton ${openSession ? "optuneOffButton" : "optuneOnButton"}`}
+          aria-label={openSession ? "Turn off Optune" : "Turn on Optune"}
+          aria-pressed={Boolean(openSession)}
+          className={`actionButton ${openSession ? "actionButtonPressed" : ""}`}
           disabled={isSaving}
           onClick={toggleOptune}
         >
           <span aria-hidden="true">{openSession ? "||" : ">"}</span>
-          <span>{openSession ? "Turned off Optune" : "Turn on Optune"}</span>
+          <span>Optune</span>
+        </button>
+        <button
+          aria-label={didExerciseSelectedDay ? "Undo exercised" : "Exercised"}
+          aria-pressed={didExerciseSelectedDay}
+          className={`actionButton ${didExerciseSelectedDay ? "actionButtonPressed" : ""}`}
+          disabled={isSaving}
+          onClick={() => toggleDailyAction("EXERCISE")}
+        >
+          <span aria-hidden="true">✓</span>
+          <span>Exercise</span>
+        </button>
+        <button
+          aria-label={didTakeMedicineSelectedDay ? "Undo medicine" : "Took medicine"}
+          aria-pressed={didTakeMedicineSelectedDay}
+          className={`actionButton ${didTakeMedicineSelectedDay ? "actionButtonPressed" : ""}`}
+          disabled={isSaving}
+          onClick={() => toggleDailyAction("MEDICINE")}
+        >
+          <span aria-hidden="true">+</span>
+          <span>Meds</span>
         </button>
       </section>
 
@@ -582,9 +758,11 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
                 const isSelected = selectedKey === key;
                 const isToday = key === todayKey;
                 const isCurrentMonth = day.getMonth() === viewDate.getMonth();
+                const markers = getCalendarMarkers(record);
 
                 return (
                   <button
+                    aria-label={getDayAriaLabel(day, record)}
                     className={[
                       "dayCell",
                       !isCurrentMonth ? "dayCellMuted" : "",
@@ -595,7 +773,14 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
                     key={key}
                     onClick={() => selectDay(day)}
                   >
-                    {day.getDate()}
+                    <span className="dayNumber">{day.getDate()}</span>
+                    <span className="calendarMarkers" aria-hidden="true">
+                      {markers
+                        .filter((marker) => marker !== "patch" && marker !== "optune")
+                        .map((marker) => (
+                          <span className={`calendarDot ${marker}Dot`} key={marker} />
+                        ))}
+                    </span>
                   </button>
                 );
               })}
@@ -637,6 +822,14 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
             <strong>{stats.sessionCount}</strong>
             <span>Sessions</span>
           </div>
+          <div className="statBox">
+            <strong>{exerciseCount}</strong>
+            <span>Exercise</span>
+          </div>
+          <div className="statBox">
+            <strong>{medicineCount}</strong>
+            <span>Medicine</span>
+          </div>
         </div>
 
         <div className="detailBlock">
@@ -654,6 +847,27 @@ export default function PatchTracker({ initialRecords }: { initialRecords: Recor
                 </p>
               ))}
             </div>
+          )}
+        </div>
+
+        <div className="detailBlock">
+          <h3>Other actions</h3>
+          {periodActions.length ? (
+            <div className="actionLog">
+              {periodActions.map((action) => (
+                <div className="actionRow" key={action.id}>
+                  <span className="actionSummary">
+                    <span className={`calendarDot ${action.type === "EXERCISE" ? "exerciseDot" : "medicineDot"}`} aria-hidden="true" />
+                    <span>{formatActionSummary(action, scope !== "day")}</span>
+                  </span>
+                  <button className="inlineDeleteButton" disabled={isSaving} onClick={() => deleteDailyAction(action)}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="emptyText">No other actions recorded for this {scope}.</p>
           )}
         </div>
 
